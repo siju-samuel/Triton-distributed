@@ -1,0 +1,3 @@
+# Reproducible build artifacts (regenerate with build.sh).
+build/
+libishmem_device.bc

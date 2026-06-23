@@ -86,6 +86,21 @@ def is_maca():
         return False
 
 
+def is_xpu():
+    """Checks for an Intel XPU (oneAPI Level-Zero) backend.
+
+    Prefer torch.xpu (the SYCL/Level-Zero runtime torch ships); fall back to
+    the `xpu-smi` tool. Kept independent of nvidia/rocm/maca so exactly one
+    backend predicate is active (ModuleProxy asserts this)."""
+    try:
+        import torch
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return True
+    except Exception:
+        pass
+    return bool(shutil.which("xpu-smi"))
+
+
 def get_shmem_backend():
     if is_cuda():
         return 'nvshmem'
@@ -142,8 +157,17 @@ elif is_hip():
                               "export TRITON_DIST_SHMEM_BACKEND=rocshmem")
 elif is_maca():
     import triton.pymaca.maca as maca
+elif is_xpu():
+    # Intel XPU backend (ISHMEM device comm). torch.xpu is the runtime; the
+    # SHMEM device calls go through the libishmem_device bitcode. NUMA / clock
+    # helpers are not yet wired for XPU — provide inert stubs so the common
+    # import path works (kernels that need them will be added per-feature).
+    import torch  # noqa: F401  (xpu runtime)
+
+    def get_numa_node(device_index):  # noqa: D401
+        return -1
 else:
-    raise Exception("either CUDA or HIP platform is supported")
+    raise Exception("only CUDA / HIP / MACA / XPU platforms are supported")
 
 # Some code from python/flux/util.py in flux project
 

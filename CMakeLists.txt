@@ -26,6 +26,13 @@ option(TRITON_BUILD_UT "Build C++ Triton Unit Tests" ON)
 option(TRITON_BUILD_WITH_CCACHE "Build with ccache (if available)" ON)
 set(TRITON_CODEGEN_BACKENDS "" CACHE STRING "Enable different codegen backends")
 option(TRITON_USE_MACA "Build the Triton Distributed with MACA backend" OFF)
+# AXON: Intel XPU (ISHMEM / SPIR-V / Level-Zero) backend. When ON, the build
+# wires the TritonDistributedTo{TritonGPU,LLVM}/XPU lowering (see
+# lib/Conversion/.../XPU and docs/xpu-mlir-lowering.md) against the Intel
+# backend in the Triton fork's third_party/intel. Default OFF: the XPU device
+# binding (shmem/ishmem_bind) + Python frontend (language/extra/xpu) are usable
+# independently of this MLIR path. See docs/xpu-build.md.
+option(TRITON_USE_XPU "Build Triton Distributed with the Intel XPU backend" OFF)
 
 if(TRITON_BUILD_WITH_CCACHE)
   find_program(CCACHE_PROGRAM ccache)
