@@ -28,6 +28,76 @@ runs on BMG; the single thing between here and in-kernel fused ISHMEM comm is a
 SPIR-V translator extension for ISHMEM's device globals (T1b) — an
 ISHMEM-rebuild / allowlist item, not a design dead-end.
 
+## Feature support matrix (XPU)
+
+Legend: ✅ supported & verified on BMG · 🟡 built but not yet runtime-verified
+(blocked on T1b/T3) · ⛔ not started / hardware-gated.
+
+### Compiler & toolchain
+| Capability | XPU status | Notes |
+|---|---|---|
+| Triton kernels → SPIR-V → Level-Zero on BMG | ✅ | torch 2.11+xpu + Triton 3.7 `intel` backend |
+| Triton-XPU on PVC / Xe2 / Arc | 🟡 | same backend; only BMG validated here |
+| Multi-GPU runtime (8× BMG, peer copies) | ✅ | via `torch.xpu` |
+| `extern_call` → custom device bitcode linked into a kernel | ✅ | the NVSHMEM-style mechanism, proven on XPU |
+
+### Device SHMEM comm primitives (Layer B + C)
+All 15 are wrapped (C-ABI shim `axon_ishmem_*` + Triton bindings), build into
+`libishmem_device.bc`, and import clean. They are 🟡 **not yet runtime-callable
+in-kernel** until T1b (the SPIR-V-extension wall) is cleared.
+
+| Primitive | Wrapped + linkable | In-kernel runtime |
+|---|---|---|
+| `my_pe`, `n_pes` | ✅ | 🟡 (blocked T1b) |
+| `remote_ptr` (`ishmem_ptr`) | ✅ | 🟡 |
+| `int_p` (scalar put) | ✅ | 🟡 |
+| `putmem_block`, `putmem_nbi_block` | ✅ | 🟡 |
+| `getmem_block`, `getmem_nbi_block` | ✅ | 🟡 |
+| `putmem_signal_block`, `putmem_signal_nbi_block` | ✅ | 🟡 |
+| `signal_op`, `signal_fetch`, `signal_wait_until` | ✅ | 🟡 |
+| `fence`, `quiet` | ✅ | 🟡 |
+| `tid` / `__syncthreads` (device intrinsics) | ✅ | 🟡 |
+
+**Not wrapped yet** (declared in the shared `libshmem_device.py` dispatch but
+no XPU binding — would `AttributeError` if a kernel calls them): `barrier_all`,
+`sync_all`, `broadcast`/`broadcastmem`, `fcollect`/`fcollectmem`, `team_*`
+(`team_my_pe`/`team_n_pes`/`team_translate_pe`/`team_sync`), `remote_mc_ptr`
+(multicast), `quiet_pe`, the `_warp`/`_wave`/`_wg` scope variants, and
+`putmem_rma*`. Add per-kernel as needed (the MetaX backend also ships only a
+subset).
+
+### Backend layers
+| Layer | XPU status |
+|---|---|
+| Layer B — device SHMEM bitcode (`shmem/ishmem_bind/`) | ✅ builds end-to-end |
+| Layer C — Python frontend (`language/extra/xpu/`, `is_xpu()`, ModuleProxy) | ✅ imports clean |
+| Layer A — MLIR Distributed-dialect lowering (`…/XPU`) | ⛔ specced only (T3; needs Triton-fork build) |
+| `triton_dist` package import (needs compiled Distributed dialect) | ⛔ needs T3 fork build |
+
+### Kernels / collectives
+| Kernel | Host-orchestrated (today) | In-kernel fused (target) |
+|---|---|---|
+| AllGather | ✅ verified (world 2,4) | ⛔ needs T1b + T3 |
+| all-to-all | ✅ verified (world 2,4) | ⛔ needs T1b + T3 |
+| EP dispatch / combine (MoE) | ✅ verified roundtrip | ⛔ needs T1b + T3 |
+| AllGather-GEMM (TP overlap) | ⛔ not ported | ⛔ |
+| GEMM-ReduceScatter | ⛔ not ported | ⛔ |
+| Distributed Flash-Decode | ⛔ not ported | ⛔ |
+| Low-latency EP all-to-all (DeepEP-style) | ⛔ not ported | ⛔ |
+
+> **host-orchestrated** = Triton-XPU compute kernels + `torch.xpu` peer copies
+> for comm (the `host-proxy` access method). Correct and runnable now; it is
+> the oracle the fused in-kernel versions must match. **in-kernel fused** =
+> compute + ISHMEM device comm in ONE Triton kernel (the project's whole point)
+> — blocked on T1b (SPIR-V ext) and T3 (MLIR lowering).
+
+### Communication transports
+| Transport | XPU status |
+|---|---|
+| Intra-node PCIe peer copy (BMG, no Xe-Link) | ✅ |
+| Intra-node Xe-Link | ⛔ not on this SKU/box |
+| Cross-node IB / RDMA (scale-out) | ⛔ hardware-gated → `anbmghdr` |
+
 ## The environment (T0)
 
 `/opt/intel/oneapi` (→ `/home/sdp`) is permission-locked for this user; the
