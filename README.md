@@ -41,6 +41,15 @@ Using Triton-distributed, programmers are able to develop efficient kernels comp
 Triton-distributed currently mainly targets Nvidia GPU and AMD GPU. It can also be ported to other hardware platforms.
 Feel free to contact us if you want to use Triton-distributed on your own hardware.
 
+> **Intel XPU (experimental, in progress).** A fourth backend targeting Intel
+> GPUs (Battlemage / Arc B-Series, Data Center GPU Max / PVC, Xe2) is under
+> development on top of the in-tree Intel Triton backend (Triton → SPIR-V →
+> Level-Zero) and **Intel SHMEM (ISHMEM)** for device-side communication. The
+> toolchain, the ISHMEM device-comm binding, and the multi-GPU substrate are
+> working on Battlemage; the in-kernel fused path has one known toolchain
+> blocker. See **[docs/xpu-build.md](docs/xpu-build.md)** for the full
+> supported / not-supported list, build recipe, and status.
+
 ## News
 - 12/22/2025 ✨✨✨: Updated EP functions, support low-latency mode, token saving, and Mega-EP.
 - 21/10/2025 🔥🔥🔥: Triton-distributed is presented at [Triton Conference 2025](https://tritonconference.eventbuilder.com/TritonDeveloperConference?ref=TritonDeveloperConference), see the [talk](https://www.youtube.com/playlist?list=PLc_vA1r0qoiQqCdWFDUDqI90oY5EjfGuO) for details.
@@ -235,11 +244,13 @@ Computation
 - [x] Nvidia SM80 support
 - [x] Nvidia SM89 support
 - [x] AMD CDNA3 support
+- [~] Intel XPU (Battlemage / PVC / Xe2) — Triton→SPIR-V→Level-Zero toolchain working; MLIR Distributed-dialect lowering pending ([docs/xpu-build.md](docs/xpu-build.md))
 
 Communication
 - [x] NVLink
 - [x] IB
 - [x] PCIe
+- [~] Intel SHMEM (ISHMEM) device comm — binding built + links; in-kernel SPIR-V translation blocked on one extension ([docs/xpu-build.md](docs/xpu-build.md))
 
 ### Performance
 - [x] Performance report
