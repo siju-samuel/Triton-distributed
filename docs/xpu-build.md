@@ -163,17 +163,29 @@ symmetric-heap / PE state). ISHMEM itself AOT-compiles for `spir64_gen`
 (`intel.translate_to_spirv`, a compiled `_C` call) does not enable that
 extension. Even `my_pe()` alone trips it (it reads a device global).
 
-**Resolutions (either unblocks in-kernel comm):**
-1. **Rebuild ISHMEM as relinkable `-fsycl-targets=spir64` JIT bitcode** with the
-   device-globals lowered compatibly, OR build a thin ISHMEM device variant
-   whose state is passed by pointer instead of device globals.
-2. **Extend Triton-XPU's `llvm-spirv` allowlist** to include
-   `SPV_INTEL_global_variable_decorations` (a translator flag / a patch to the
-   intel-xpu-backend-for-triton SPIR-V step).
+**The bitcode itself is SOUND** — verified: the standalone translator accepts
+it once the extension is enabled —
+```
+llvm-spirv --spirv-ext=+all libishmem_device.bc -o out.spv   # -> 11 MB .spv, rc=0
+```
+So the blocker is *purely* that Triton's translator does not enable that one
+extension; it is not a defect in the shim or the link.
 
-Both are bounded toolchain tasks. Neither changes the port's design; the shim,
-build, frontend, and lowering spec are all ready to use the bitcode the moment
-the translation passes.
+**Resolutions (either unblocks in-kernel comm):**
+1. **Enable the extension in Triton-XPU's SPIR-V step.** Triton calls
+   `intel.translate_to_spirv` *in-process* (a compiled `libtriton` C-extension),
+   so there is no env/flag knob today — it requires patching
+   `intel-xpu-backend-for-triton`'s SPIR-V translation to pass
+   `SPV_INTEL_global_variable_decorations` (the standalone `llvm-spirv` already
+   does this with `--spirv-ext`). This is the **narrowest** fix.
+2. **Rebuild ISHMEM** as relinkable `-fsycl-targets=spir64` JIT bitcode, or a
+   thin device variant whose symmetric-heap state is passed by pointer instead
+   of host-decorated device globals (which is what pulls the extension in).
+
+Both are bounded toolchain tasks (each a multi-hour rebuild of Triton or
+ISHMEM). Neither changes the port's design; the shim, build, frontend, and
+lowering spec are all ready to use the bitcode the moment the translation
+passes.
 
 ## Python frontend (T2 / Layer C)
 
@@ -197,9 +209,21 @@ must match, and they prove the BMG multi-GPU substrate end to end today.
 Run as scripts (pytest collection needs the fork-built `triton_dist`):
 ```sh
 source Triton-distributed/xpu_env.sh
-python Triton-distributed/python/triton_dist/test/xpu/test_allgather_xpu_hostorch.py
-python Triton-distributed/python/triton_dist/test/xpu/test_all_to_all_xpu_hostorch.py
+T=Triton-distributed/python/triton_dist/test/xpu
+python $T/test_triton_xpu_basics.py        # T0 plain kernel + T1 extern bitcode linkage
+python $T/test_allgather_xpu_hostorch.py   # T4 AllGather (world 2,4)
+python $T/test_all_to_all_xpu_hostorch.py  # T5 all-to-all + EP dispatch/combine
 ```
+
+### Verified test results (8× BMG, this build)
+| Test | Result |
+|---|---|
+| `test_triton_xpu_basics::test_t0_plain_triton_xpu_kernel` | ✅ PASS |
+| `test_triton_xpu_basics::test_t1_extern_device_call_via_bitcode` | ✅ PASS |
+| `test_allgather_xpu_hostorch` (world 2, 4) | ✅ PASS |
+| `test_all_to_all_xpu_hostorch` + EP dispatch/combine (world 2, 4) | ✅ PASS |
+| `test_ishmem_device_smoke` frontend (is_xpu, 15/15 prims, enums, tid) | ✅ PASS |
+| `test_ishmem_device_smoke` in-kernel ISHMEM call | ⚠️ XFAIL (T1b SPIR-V ext) |
 
 ## MLIR lowering (T3)
 
